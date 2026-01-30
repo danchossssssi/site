@@ -344,4 +344,111 @@ function sendGeneralMessage() {
 }
 
 function handleGeneralKeyPress(event) {
-    if (
+    if (event.key === 'Enter') {
+        sendGeneralMessage();
+    }
+}
+
+// Отправка приватного сообщения
+function sendPrivateMessage(roomId) {
+    const input = document.getElementById(`input_${roomId}`);
+    const text = input.value.trim();
+    
+    if (!text || !ws || ws.readyState !== WebSocket.OPEN) {
+        return;
+    }
+    
+    ws.send(JSON.stringify({
+        type: 'private_message',
+        roomId: roomId,
+        text: text
+    }));
+    
+    input.value = '';
+    input.focus();
+}
+
+function handlePrivateKeyPress(event, roomId) {
+    if (event.key === 'Enter') {
+        sendPrivateMessage(roomId);
+    }
+}
+
+// Отображение приватного сообщения
+function displayPrivateMessage(messageData) {
+    const roomId = messageData.roomId;
+    const messagesContainer = document.getElementById(`messages_${roomId}`);
+    
+    if (!messagesContainer) {
+        // Если окно чата еще не создано, создаем его
+        const partner = users.get(messageData.senderId);
+        if (partner) {
+            createPrivateChatTab(roomId, partner.username, messageData.senderId);
+            // Повторно вызываем после создания
+            setTimeout(() => displayPrivateMessage(messageData), 100);
+        }
+        return;
+    }
+    
+    const messageElement = createMessageElement(messageData);
+    messagesContainer.appendChild(messageElement);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Создание элемента сообщения
+function createMessageElement(messageData) {
+    const isOwn = messageData.senderId === currentUser.id;
+    const time = new Date(messageData.time).toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+    });
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isOwn ? 'own' : ''} ${messageData.roomId ? 'private' : ''}`;
+    
+    messageDiv.innerHTML = `
+        <div class="message-header">
+            <span class="message-username">
+                ${escapeHtml(messageData.senderName)} ${isOwn ? '(Вы)' : ''}
+            </span>
+            <span class="message-time">${time}</span>
+        </div>
+        <div class="message-text">${escapeHtml(messageData.text)}</div>
+    `;
+    
+    return messageDiv;
+}
+
+// Загрузка истории приватного чата
+function loadPrivateHistory(roomId, messages) {
+    const messagesContainer = document.getElementById(`messages_${roomId}`);
+    if (!messagesContainer) return;
+    
+    messagesContainer.innerHTML = '';
+    
+    messages.forEach(message => {
+        const messageElement = createMessageElement(message);
+        messagesContainer.appendChild(messageElement);
+    });
+    
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Экранирование HTML
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Автофокус на поле входа при загрузке
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('usernameInput').focus();
+    
+    // Обработка нажатия Enter в поле входа
+    document.getElementById('usernameInput').addEventListener('keypress', (event) => {
+        if (event.key === 'Enter') {
+            connect();
+        }
+    });
+});
