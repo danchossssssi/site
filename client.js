@@ -27,8 +27,15 @@ const servers = {
     ]
 };
 
-// ===== ДОБАВЛЕНО: Переменная для состояния микрофона =====
+// ===== ДОБАВЛЕНО: Переменные для групповых звонков =====
 let isMicMuted = false;
+let groupCall = {
+    isActive: false,
+    callId: null,
+    participants: new Map(), // userId -> peerConnection
+    isCreator: false,
+    creatorName: null
+};
 
 // ===== ФУНКЦИЯ ДЛЯ ПЕРЕКЛЮЧЕНИЯ МИКРОФОНА =====
 function toggleMicrophone() {
@@ -37,7 +44,6 @@ function toggleMicrophone() {
         return;
     }
     
-    // Получаем все аудиодорожки из локального потока
     const audioTracks = localStream.getAudioTracks();
     
     if (audioTracks.length === 0) {
@@ -45,22 +51,260 @@ function toggleMicrophone() {
         return;
     }
     
-    // Переключаем состояние всех аудиодорожек
     isMicMuted = !isMicMuted;
     audioTracks.forEach(track => {
         track.enabled = !isMicMuted; // false = микрофон выключен
     });
     
-    // Обновляем текст и стиль кнопки
     const micBtn = document.getElementById('toggleMicBtn');
     if (micBtn) {
         micBtn.textContent = isMicMuted ? '🎤 Включить микрофон' : '🎤 Выключить микрофон';
-        micBtn.style.background = isMicMuted ? '#757575' : '#2196F3'; // Серый/Синий
+        micBtn.style.background = isMicMuted ? '#757575' : '#2196F3';
         console.log(`Микрофон ${isMicMuted ? 'выключен' : 'включен'}.`);
     }
     
-    // Показываем уведомление о состоянии микрофона
     updateCallStatus(isMicMuted ? 'Микрофон выключен' : 'Микрофон включен');
+}
+
+// ===== ДОБАВЛЕНО: ФУНКЦИИ ДЛЯ ГРУППОВЫХ ЗВОНКОВ =====
+
+// Создание группового звонка
+function startGroupCall() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        alert('Нет подключения к серверу.');
+        return;
+    }
+    
+    if (currentCall.status !== 'idle') {
+        alert('Уже есть активный звонок');
+        return;
+    }
+    
+    const callId = `group_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Запрашиваем доступ к микрофону
+    navigator.mediaDevices.getUserMedia({ 
+        audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+        }, 
+        video: false 
+    })
+    .then(stream => {
+        localStream = stream;
+        
+        // Инициализируем групповой звонок
+        groupCall = {
+            isActive: true,
+            callId: callId,
+            participants: new Map(),
+            isCreator: true,
+            creatorName: currentUser.username
+        };
+        
+        // Отправляем уведомление о создании звонка
+        ws.send(JSON.stringify({
+            type: 'group_call_start',
+            callId: callId
+        }));
+        
+        // Показываем интерфейс группового звонка
+        showGroupCallInterface();
+        updateGroupCallStatus(`Создан групповой звонок. Ожидание участников...`);
+        
+        // Добавляем кнопку микрофона
+        const micBtn = document.getElementById('toggleMicBtn');
+        if (micBtn) {
+            micBtn.textContent = '🎤 Выключить микрофон';
+            micBtn.style.background = '#2196F3';
+            micBtn.style.display = 'inline-block';
+        }
+        
+        console.log(`Создан групповой звонок: ${callId}`);
+    })
+    .catch(error => {
+        console.error('Ошибка при создании группового звонка:', error);
+        if (error.name === 'NotAllowedError') {
+            alert('Доступ к микрофону запрещен. Разрешите доступ к микрофону в настройках браузера.');
+        }
+    });
+}
+
+// Присоединение к групповому звонку
+function joinGroupCall(callId, creatorName) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        alert('Нет подключения к серверу.');
+        return;
+    }
+    
+    if (currentCall.status !== 'idle') {
+        alert('Уже есть активный звонок');
+        return;
+    }
+    
+    // Запрашиваем доступ к микрофону
+    navigator.mediaDevices.getUserMedia({ 
+        audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+        }, 
+        video: false 
+    })
+    .then(stream => {
+        localStream = stream;
+        
+        // Инициализируем групповой звонок как участник
+        groupCall = {
+            isActive: true,
+            callId: callId,
+            participants: new Map(),
+            isCreator: false,
+            creatorName: creatorName
+        };
+        
+        // Отправляем запрос на присоединение
+        ws.send(JSON.stringify({
+            type: 'group_call_join',
+            callId: callId
+        }));
+        
+        // Показываем интерфейс группового звонка
+        showGroupCallInterface();
+        updateGroupCallStatus(`Подключение к групповому звонку...`);
+        
+        // Добавляем кнопку микрофона
+        const micBtn = document.getElementById('toggleMicBtn');
+        if (micBtn) {
+            micBtn.textContent = '🎤 Выключить микрофон';
+            micBtn.style.background = '#2196F3';
+            micBtn.style.display = 'inline-block';
+        }
+        
+        console.log(`Присоединение к групповому звонку: ${callId}`);
+    })
+    .catch(error => {
+        console.error('Ошибка при присоединении к групповому звонку:', error);
+        if (error.name === 'NotAllowedError') {
+            alert('Доступ к микрофону запрещен. Разрешите доступ к микрофону в настройках браузера.');
+        }
+    });
+}
+
+// Завершение группового звонка
+function endGroupCall() {
+    if (!groupCall.isActive) return;
+    
+    if (groupCall.isCreator) {
+        // Если мы создатель, завершаем звонок для всех
+        ws.send(JSON.stringify({
+            type: 'group_call_end',
+            callId: groupCall.callId
+        }));
+    } else {
+        // Если мы участник, просто выходим
+        ws.send(JSON.stringify({
+            type: 'group_call_leave',
+            callId: groupCall.callId
+        }));
+    }
+    
+    // Закрываем все соединения
+    groupCall.participants.forEach((peer, userId) => {
+        if (peer) peer.close();
+    });
+    
+    // Останавливаем локальный поток
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+    }
+    
+    // Сбрасываем состояние
+    groupCall = {
+        isActive: false,
+        callId: null,
+        participants: new Map(),
+        isCreator: false,
+        creatorName: null
+    };
+    
+    isMicMuted = false;
+    
+    // Скрываем интерфейс
+    hideGroupCallInterface();
+    console.log('Групповой звонок завершен');
+}
+
+// Интерфейс для групповых звонков
+function showGroupCallInterface() {
+    const container = document.getElementById('groupCallContainer');
+    const title = document.getElementById('groupCallTitle');
+    const status = document.getElementById('groupCallStatus');
+    const participantsList = document.getElementById('groupCallParticipants');
+    const endBtn = document.getElementById('endGroupCallBtn');
+    
+    if (container && title && status) {
+        container.style.display = 'block';
+        title.textContent = groupCall.isCreator ? '🎙️ Ваш групповой звонок' : `🎙️ Групповой звонок от ${groupCall.creatorName}`;
+        status.textContent = 'Подключение...';
+        
+        if (participantsList) {
+            participantsList.innerHTML = '<li>Загрузка участников...</li>';
+        }
+        
+        if (endBtn) {
+            endBtn.textContent = groupCall.isCreator ? 'Завершить для всех' : 'Покинуть звонок';
+        }
+    }
+    
+    // Скрываем кнопку приватного звонка
+    const callContainer = document.getElementById('callContainer');
+    if (callContainer) {
+        callContainer.style.display = 'none';
+    }
+}
+
+function updateGroupCallStatus(text) {
+    const statusEl = document.getElementById('groupCallStatus');
+    if (statusEl) {
+        statusEl.textContent = text;
+    }
+}
+
+function updateGroupCallParticipants(participants) {
+    const participantsList = document.getElementById('groupCallParticipants');
+    if (!participantsList) return;
+    
+    participantsList.innerHTML = '';
+    
+    // Добавляем себя
+    const selfItem = document.createElement('li');
+    selfItem.innerHTML = `<strong>${currentUser.username} (Вы)</strong> ${isMicMuted ? '🔇' : '🎤'}`;
+    participantsList.appendChild(selfItem);
+    
+    // Добавляем других участников
+    participants.forEach(participant => {
+        if (participant !== currentUser.username) {
+            const item = document.createElement('li');
+            item.textContent = participant;
+            participantsList.appendChild(item);
+        }
+    });
+}
+
+function hideGroupCallInterface() {
+    const container = document.getElementById('groupCallContainer');
+    if (container) {
+        container.style.display = 'none';
+    }
+    
+    // Скрываем кнопку микрофона
+    const micBtn = document.getElementById('toggleMicBtn');
+    if (micBtn) {
+        micBtn.style.display = 'none';
+    }
 }
 
 // ===== ОСНОВНОЕ ПОДКЛЮЧЕНИЕ =====
@@ -151,7 +395,7 @@ function connect() {
                     loadPrivateHistory(data.roomId, data.messages);
                     break;
                     
-                // ===== ОБРАБОТКА ЗВОНКОВ =====
+                // ===== ОБРАБОТКА ПРИВАТНЫХ ЗВОНКОВ =====
                 case 'call_offer':
                     handleIncomingCall(data.offer, data.callerId, data.callerName, data.callId);
                     break;
@@ -177,6 +421,49 @@ function connect() {
                     resetCallState();
                     break;
                     
+                // ===== ДОБАВЛЕНО: ОБРАБОТКА ГРУППОВЫХ ЗВОНКОВ =====
+                case 'group_call_started':
+                    // Уведомление о создании группового звонка
+                    displayGroupCallNotification(data.callId, data.creatorName);
+                    break;
+                    
+                case 'group_call_participants':
+                    // Получение списка участников
+                    if (groupCall.isActive && groupCall.callId === data.callId) {
+                        updateGroupCallParticipants(data.participants);
+                        updateGroupCallStatus(`Участников: ${data.participants.length}`);
+                    }
+                    break;
+                    
+                case 'group_call_user_joined':
+                    // Новый участник присоединился
+                    if (groupCall.isActive && groupCall.callId === data.callId) {
+                        addGroupCallNotification(`${data.username} присоединился к звонку`);
+                    }
+                    break;
+                    
+                case 'group_call_user_left':
+                    // Участник покинул звонк
+                    if (groupCall.isActive && groupCall.callId === data.callId) {
+                        addGroupCallNotification(`${data.username} покинул звонок`);
+                    }
+                    break;
+                    
+                case 'group_call_ended':
+                    // Создатель завершил звонок
+                    if (groupCall.isActive && groupCall.callId === data.callId) {
+                        alert(`Групповой звонок завершен пользователем ${data.endedBy}`);
+                        endGroupCall();
+                    }
+                    break;
+                    
+                case 'group_call_signal':
+                    // Сигнал WebRTC от другого участника
+                    if (groupCall.isActive && groupCall.callId === data.callId) {
+                        handleGroupCallSignal(data.senderId, data.signal);
+                    }
+                    break;
+                    
                 case 'error':
                     console.error('Ошибка сервера:', data.message);
                     break;
@@ -190,6 +477,11 @@ function connect() {
         console.log('❌ WebSocket соединение закрыто');
         updateStatus('❌ Отключено', 'disconnected');
         showReconnectButton();
+        
+        // Завершаем групповой звонок при отключении
+        if (groupCall.isActive) {
+            endGroupCall();
+        }
     };
     
     ws.onerror = (error) => {
@@ -198,9 +490,41 @@ function connect() {
     };
 }
 
-// ===== ФУНКЦИИ ДЛЯ ЗВОНКОВ =====
+// ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ГРУППОВЫХ ЗВОНКОВ =====
 
-// Инициирование звонка
+function displayGroupCallNotification(callId, creatorName) {
+    // Показываем уведомление в общем чате
+    const messagesContainer = document.getElementById('generalMessages');
+    if (messagesContainer) {
+        const notification = document.createElement('div');
+        notification.className = 'system-message';
+        notification.innerHTML = `
+            <div>🎙️ <strong>${creatorName}</strong> начал групповой звонок!</div>
+            <button onclick="joinGroupCall('${callId}', '${creatorName}')" 
+                    style="margin-top: 10px; padding: 8px 15px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                Присоединиться
+            </button>
+        `;
+        messagesContainer.appendChild(notification);
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+}
+
+function addGroupCallNotification(message) {
+    const statusEl = document.getElementById('groupCallStatus');
+    if (statusEl) {
+        const oldText = statusEl.textContent;
+        statusEl.textContent = `${message}. ${oldText}`;
+    }
+}
+
+function handleGroupCallSignal(senderId, signal) {
+    // Здесь должна быть логика обработки WebRTC сигналов для mesh-сети
+    // Это сложная реализация, требующая создания отдельных peerConnection для каждого участника
+    console.log('Получен групповой сигнал от:', senderId, signal);
+}
+
+// ===== ФУНКЦИИ ДЛЯ ПРИВАТНЫХ ЗВОНКОВ (остаются без изменений) =====
 function startVoiceCall(targetUserId, targetUserName) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
         alert('Нет подключения к серверу.');
@@ -220,13 +544,11 @@ function startVoiceCall(targetUserId, targetUserName) {
         status: 'calling'
     };
     
-    // СБРОС СОСТОЯНИЯ МИКРОФОНА ПРИ НОВОМ ЗВОНКЕ
     isMicMuted = false;
     
     showCallInterface(`Звонок ${targetUserName}...`, false);
     updateCallStatus('Набор номера...');
     
-    // Запрашиваем доступ к микрофону
     navigator.mediaDevices.getUserMedia({ 
         audio: {
             echoCancellation: true,
@@ -239,12 +561,10 @@ function startVoiceCall(targetUserId, targetUserName) {
         localStream = stream;
         createPeerConnection();
         
-        // Добавляем локальный поток
         localStream.getTracks().forEach(track => {
             peerConnection.addTrack(track, localStream);
         });
         
-        // Создаем offer
         return peerConnection.createOffer({
             offerToReceiveAudio: true,
             offerToReceiveVideo: false
@@ -254,7 +574,6 @@ function startVoiceCall(targetUserId, targetUserName) {
         return peerConnection.setLocalDescription(offer);
     })
     .then(() => {
-        // Отправляем offer через WebSocket
         ws.send(JSON.stringify({
             type: 'call_offer',
             targetUserId: targetUserId,
@@ -265,7 +584,6 @@ function startVoiceCall(targetUserId, targetUserName) {
         currentCall.status = 'ringing';
         updateCallStatus('Вызов... Ожидание ответа');
         
-        // Обновляем кнопку микрофона при начале звонка
         const micBtn = document.getElementById('toggleMicBtn');
         if (micBtn) {
             micBtn.textContent = '🎤 Выключить микрофон';
@@ -273,7 +591,6 @@ function startVoiceCall(targetUserId, targetUserName) {
             micBtn.style.display = 'inline-block';
         }
         
-        // Таймаут на звонок (60 секунд)
         setTimeout(() => {
             if (currentCall.status === 'ringing') {
                 alert('Пользователь не ответил');
@@ -290,28 +607,22 @@ function startVoiceCall(targetUserId, targetUserName) {
     });
 }
 
-// Создание PeerConnection
 function createPeerConnection() {
     try {
         peerConnection = new RTCPeerConnection(servers);
         
-        // Обработчик удаленного потока
         peerConnection.ontrack = (event) => {
-            console.log('Получен удаленный аудиопоток');
+            console.log('Получен удаленный аудиопоток.');
             const remoteAudio = document.getElementById('remoteAudio');
             if (remoteAudio && event.streams[0]) {
                 remoteAudio.srcObject = event.streams[0];
-                
-                // Автовоспроизведение
                 remoteAudio.play().catch(e => {
                     console.log('Автовоспроизведение заблокировано:', e);
-                    // Показать кнопку для ручного запуска
                     showPlayAudioButton();
                 });
             }
         };
         
-        // ICE кандидаты
         peerConnection.onicecandidate = (event) => {
             if (event.candidate && currentCall.partnerId) {
                 ws.send(JSON.stringify({
@@ -323,7 +634,6 @@ function createPeerConnection() {
             }
         };
         
-        // Состояние ICE соединения
         peerConnection.oniceconnectionstatechange = () => {
             console.log('ICE состояние:', peerConnection.iceConnectionState);
             updateCallStatus(`Состояние: ${peerConnection.iceConnectionState}`);
@@ -345,7 +655,6 @@ function createPeerConnection() {
             }
         };
         
-        // Состояние signaling
         peerConnection.onsignalingstatechange = () => {
             console.log('Signaling состояние:', peerConnection.signalingState);
         };
@@ -356,12 +665,10 @@ function createPeerConnection() {
     }
 }
 
-// Обработка входящего звонка
 function handleIncomingCall(offer, callerId, callerName, callId) {
     console.log(`Входящий звонок от: ${callerName}`);
     
-    // Если уже в звонке, отклоняем новый
-    if (currentCall.status !== 'idle') {
+    if (currentCall.status !== 'idle' || groupCall.isActive) {
         ws.send(JSON.stringify({
             type: 'reject_call',
             callerId: callerId,
@@ -377,26 +684,19 @@ function handleIncomingCall(offer, callerId, callerName, callId) {
         status: 'ringing'
     };
     
-    // СБРОС СОСТОЯНИЯ МИКРОФОНА ПРИ ВХОДЯЩЕМ ЗВОНКЕ
     isMicMuted = false;
-    
-    // Сохраняем offer
     window.incomingOffer = offer;
     
-    // Показываем интерфейс с кнопками принятия/отклонения
     showCallInterface(`Входящий звонок от ${callerName}`, true);
     updateCallStatus('Входящий вызов...');
     
-    // Воспроизводим звук вызова
     playRingtone();
     
-    // Скрываем кнопку микрофона до принятия звонка
     const micBtn = document.getElementById('toggleMicBtn');
     if (micBtn) {
         micBtn.style.display = 'none';
     }
     
-    // Автоотклонение через 45 секунд
     setTimeout(() => {
         if (currentCall.status === 'ringing') {
             rejectCall();
@@ -404,7 +704,6 @@ function handleIncomingCall(offer, callerId, callerName, callId) {
     }, 45000);
 }
 
-// Принятие входящего звонка
 function acceptCall() {
     if (!window.incomingOffer) return;
     
@@ -424,23 +723,19 @@ function acceptCall() {
         localStream = stream;
         createPeerConnection();
         
-        // Добавляем локальный поток
         localStream.getTracks().forEach(track => {
             peerConnection.addTrack(track, localStream);
         });
         
-        // Устанавливаем удаленное описание
         return peerConnection.setRemoteDescription(new RTCSessionDescription(window.incomingOffer));
     })
     .then(() => {
-        // Создаем answer
         return peerConnection.createAnswer();
     })
     .then(answer => {
         return peerConnection.setLocalDescription(answer);
     })
     .then(() => {
-        // Отправляем answer
         ws.send(JSON.stringify({
             type: 'call_answer',
             callerId: currentCall.partnerId,
@@ -451,7 +746,6 @@ function acceptCall() {
         updateCallStatus('Разговор идет...');
         hideCallAcceptRejectButtons();
         
-        // ПОКАЗЫВАЕМ КНОПКУ МИКРОФОНА ПРИ ПРИНЯТИИ ЗВОНКА
         const micBtn = document.getElementById('toggleMicBtn');
         if (micBtn) {
             micBtn.textContent = '🎤 Выключить микрофон';
@@ -468,7 +762,6 @@ function acceptCall() {
     });
 }
 
-// Обработка ответа на звонок
 function handleCallAnswer(answer, callId) {
     if (!peerConnection || currentCall.callId !== callId) return;
     
@@ -486,7 +779,6 @@ function handleCallAnswer(answer, callId) {
         });
 }
 
-// Обработка ICE кандидата
 function handleNewICECandidate(candidate, callId) {
     if (!peerConnection || currentCall.callId !== callId) return;
     
@@ -496,13 +788,11 @@ function handleNewICECandidate(candidate, callId) {
         });
 }
 
-// Завершение звонка
 function endCall() {
     if (currentCall.status === 'idle') return;
     
     console.log('Завершение звонка');
     
-    // Отправляем уведомление другой стороне
     if (currentCall.partnerId && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
             type: 'end_call',
@@ -511,7 +801,6 @@ function endCall() {
         }));
     }
     
-    // Закрываем соединения
     if (peerConnection) {
         peerConnection.close();
         peerConnection = null;
@@ -527,7 +816,6 @@ function endCall() {
     hideCallInterface();
 }
 
-// Отклонение звонка
 function rejectCall() {
     if (currentCall.status !== 'ringing') return;
     
@@ -546,7 +834,6 @@ function rejectCall() {
     hideCallInterface();
 }
 
-// Обработка завершения звонка от другой стороны
 function handleCallEnded(callId) {
     if (currentCall.callId !== callId) return;
     
@@ -555,7 +842,6 @@ function handleCallEnded(callId) {
     endCall();
 }
 
-// Обработка отклонения звонка
 function handleCallRejected(callId) {
     if (currentCall.callId !== callId) return;
     
@@ -564,7 +850,6 @@ function handleCallRejected(callId) {
     endCall();
 }
 
-// Вспомогательные функции звонков
 function generateCallId() {
     return 'call_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 }
@@ -576,7 +861,7 @@ function resetCallState() {
         callId: null,
         status: 'idle'
     };
-    isMicMuted = false; // СБРАСЫВАЕМ СОСТОЯНИЕ МИКРОФОНА
+    isMicMuted = false;
     window.incomingOffer = null;
 }
 
@@ -642,7 +927,6 @@ function hideCallInterface() {
         container.style.display = 'none';
     }
     
-    // Скрываем кнопку микрофона при завершении звонка
     const micBtn = document.getElementById('toggleMicBtn');
     if (micBtn) {
         micBtn.style.display = 'none';
