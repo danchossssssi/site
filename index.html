@@ -457,7 +457,7 @@
             border-radius: 15px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.3);
             z-index: 2000;
-            min-width: 300px;
+            min-width: 350px;
             text-align: center;
             border: 3px solid #4CAF50;
         }
@@ -478,9 +478,29 @@
         
         .call-controls {
             display: flex;
+            flex-wrap: wrap;
             justify-content: center;
-            gap: 15px;
+            gap: 10px;
             margin-top: 20px;
+        }
+        
+        /* ДОБАВЛЕН СТИЛЬ ДЛЯ КНОПКИ МИКРОФОНА */
+        #toggleMicBtn {
+            background: #2196F3; /* Синий цвет для включенного микрофона */
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+            transition: all 0.3s;
+            display: none; /* Скрыта по умолчанию, показывается при звонке */
+        }
+        
+        #toggleMicBtn:hover {
+            transform: scale(1.05);
+            opacity: 0.9;
         }
         
         .call-btn {
@@ -491,6 +511,7 @@
             font-size: 1em;
             font-weight: bold;
             transition: all 0.3s;
+            min-width: 120px;
         }
         
         #acceptCallBtn {
@@ -623,6 +644,21 @@
             #callContainer {
                 width: 90%;
                 max-width: 350px;
+                padding: 20px;
+            }
+            
+            .call-controls {
+                flex-direction: column;
+                align-items: center;
+            }
+            
+            .call-btn {
+                width: 100%;
+                margin-bottom: 10px;
+            }
+            
+            #toggleMicBtn {
+                width: 100%;
             }
         }
     </style>
@@ -701,7 +737,7 @@
             </div>
         </div>
         
-        <!-- Интерфейс звонка -->
+        <!-- Интерфейс звонка (ДОБАВЛЕНА КНОПКА МИКРОФОНА) -->
         <div id="callContainer">
             <div id="callTitle">Звонок</div>
             <div id="callStatus">Готов к звонку</div>
@@ -714,9 +750,15 @@
             </audio>
             
             <div class="call-controls">
+                <!-- Основные кнопки управления звонком -->
                 <button id="acceptCallBtn" class="call-btn" onclick="acceptCall()">Принять</button>
                 <button id="rejectCallBtn" class="call-btn" onclick="rejectCall()">Отклонить</button>
                 <button id="endCallBtn" class="call-btn" onclick="endCall()">Завершить</button>
+                
+                <!-- ДОБАВЛЕНА КНОПКА ПЕРЕКЛЮЧЕНИЯ МИКРОФОНА -->
+                <button id="toggleMicBtn" class="call-btn" onclick="toggleMicrophone()">
+                    🎤 Выключить микрофон
+                </button>
             </div>
             
             <button id="playAudioBtn" class="call-btn" onclick="document.getElementById('remoteAudio').play()">
