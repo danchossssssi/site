@@ -806,4 +806,117 @@ function switchChat(chatId) {
     } else {
         const tab = document.querySelector(`.chat-tab[data-room-id="${chatId}"]`);
         const chatWindow = document.getElementById(`chat_${chatId}`);
-       
+        if (tab) tab.classList.add('active');
+        if (chatWindow) chatWindow.classList.add('active');
+        document.getElementById(`input_${chatId}`)?.focus();
+    }
+    currentChat = chatId;
+}
+
+function closePrivateChat(roomId, event) {
+    if (event) event.stopPropagation();
+    
+    document.querySelector(`.chat-tab[data-room-id="${roomId}"]`)?.remove();
+    document.getElementById(`chat_${roomId}`)?.remove();
+    activeChats.delete(roomId);
+    switchChat('general');
+}
+
+function sendPrivateMessage(roomId) {
+    const input = document.getElementById(`input_${roomId}`);
+    if (!input) return;
+    
+    const text = input.value.trim();
+    if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+    
+    ws.send(JSON.stringify({
+        type: 'private_message',
+        roomId: roomId,
+        text: text
+    }));
+    
+    input.value = '';
+    input.focus();
+}
+
+function handlePrivateKeyPress(event, roomId) {
+    if (event.key === 'Enter') sendPrivateMessage(roomId);
+}
+
+function displayPrivateMessage(messageData) {
+    const roomId = messageData.roomId;
+    const messagesContainer = document.getElementById(`messages_${roomId}`);
+    
+    if (!messagesContainer) {
+        const partner = users.get(messageData.senderId);
+        if (partner) {
+            createPrivateChatTab(roomId, partner.username, messageData.senderId);
+            setTimeout(() => displayPrivateMessage(messageData), 100);
+        }
+        return;
+    }
+    
+    const messageElement = createMessageElement(messageData, true);
+    messagesContainer.appendChild(messageElement);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+function loadPrivateHistory(roomId, messages) {
+    const messagesContainer = document.getElementById(`messages_${roomId}`);
+    if (!messagesContainer) return;
+    
+    messagesContainer.innerHTML = '';
+    messages.forEach(message => {
+        const messageElement = createMessageElement(message, true);
+        messagesContainer.appendChild(messageElement);
+    });
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+function createMessageElement(messageData, isPrivate = false) {
+    const isOwn = messageData.senderId === currentUser.id || 
+                  messageData.userId === currentUser.id;
+    
+    const time = new Date(messageData.time).toLocaleTimeString([], { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+    });
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isOwn ? 'own' : ''} ${isPrivate ? 'private' : ''}`;
+    
+    const username = messageData.senderName || messageData.username;
+    
+    messageDiv.innerHTML = `
+        <div class="message-header">
+            <span class="message-username">
+                ${escapeHtml(username)} ${isOwn ? '(Вы)' : ''}
+            </span>
+            <span class="message-time">${time}</span>
+        </div>
+        <div class="message-text">${escapeHtml(messageData.text)}</div>
+    `;
+    
+    return messageDiv;
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Инициализация
+document.addEventListener('DOMContentLoaded', () => {
+    const usernameInput = document.getElementById('usernameInput');
+    if (usernameInput) {
+        usernameInput.focus();
+        usernameInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') connect();
+        });
+    }
+    
+    const generalTab = document.querySelector('.chat-tab[data-chat="general"]');
+    if (generalTab) generalTab.onclick = () => switchChat('general');
+});
