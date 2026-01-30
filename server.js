@@ -12,6 +12,7 @@ const wss = new WebSocket.Server({ server });
 const users = new Map();           // ws -> {id, username, online}
 const privateRooms = new Map();    // roomId -> {user1, user2, messages[]}
 const generalMessages = [];        // Сообщения общего чата
+const activeCalls = new Map();     // callId -> {callerId, receiverId, status}
 
 // Генерация ID комнаты
 function generateRoomId(userId1, userId2) {
@@ -19,7 +20,17 @@ function generateRoomId(userId1, userId2) {
 }
 
 // Middleware для статических файлов
-app.use(express.static(__dirname)); // Исправлено: ищем файлы в корне
+app.use(express.static(__dirname));
+
+// Функция для поиска WebSocket по userId
+function findWsByUserId(userId) {
+    for (const [ws, user] of users.entries()) {
+        if (user.id === userId) {
+            return ws;
+        }
+    }
+    return null;
+}
 
 // WebSocket обработка
 wss.on('connection', (ws) => {
@@ -35,6 +46,7 @@ wss.on('connection', (ws) => {
     ws.on('message', (data) => {
         try {
             const message = JSON.parse(data.toString());
+            console.log('Получено сообщение типа:', message.type);
             
             switch (message.type) {
                 case 'set_username':
@@ -96,6 +108,74 @@ wss.on('connection', (ws) => {
                 case 'get_private_history':
                     sendPrivateHistory(ws, message.roomId);
                     break;
+                    
+                // ===== ЗВОНКИ =====
+                case 'call_offer':
+                    // Пересылаем предложение о звонке получателю
+                    const receiverWs = findWsByUserId(message.targetUserId);
+                    if (receiverWs && receiverWs.readyState === WebSocket.OPEN) {
+                        receiverWs.send(JSON.stringify({
+                            type: 'call_offer',
+                            offer: message.offer,
+                            callerId: userId,
+                            callerName: users.get(ws)?.username || 'Неизвестный',
+                            callId: message.callId || uuidv4()
+                        }));
+                        console.log(`Переслан offer от ${userId} к ${message.targetUserId}`);
+                    } else {
+                        ws.send(JSON.stringify({
+                            type: 'call_error',
+                            message: 'Пользователь не в сети'
+                        }));
+                    }
+                    break;
+                    
+                case 'call_answer':
+                    // Пересылаем ответ на звонок инициатору
+                    const callerWs = findWsByUserId(message.callerId);
+                    if (callerWs && callerWs.readyState === WebSocket.OPEN) {
+                        callerWs.send(JSON.stringify({
+                            type: 'call_answer',
+                            answer: message.answer,
+                            callId: message.callId
+                        }));
+                        console.log(`Переслан answer к ${message.callerId}`);
+                    }
+                    break;
+                    
+                case 'ice_candidate':
+                    // Пересылаем ICE-кандидата
+                    const targetWs = findWsByUserId(message.targetUserId);
+                    if (targetWs && targetWs.readyState === WebSocket.OPEN) {
+                        targetWs.send(JSON.stringify({
+                            type: 'ice_candidate',
+                            candidate: message.candidate,
+                            callId: message.callId
+                        }));
+                    }
+                    break;
+                    
+                case 'end_call':
+                    // Уведомляем другую сторону о завершении звонка
+                    const otherUserWs = findWsByUserId(message.targetUserId);
+                    if (otherUserWs && otherUserWs.readyState === WebSocket.OPEN) {
+                        otherUserWs.send(JSON.stringify({
+                            type: 'call_ended',
+                            callId: message.callId
+                        }));
+                    }
+                    break;
+                    
+                case 'reject_call':
+                    // Уведомляем звонящего об отклонении звонка
+                    const callerWsReject = findWsByUserId(message.callerId);
+                    if (callerWsReject && callerWsReject.readyState === WebSocket.OPEN) {
+                        callerWsReject.send(JSON.stringify({
+                            type: 'call_rejected',
+                            callId: message.callId
+                        }));
+                    }
+                    break;
             }
         } catch (error) {
             console.error('Ошибка обработки сообщения:', error);
@@ -109,15 +189,15 @@ wss.on('connection', (ws) => {
             broadcastUserList();
         }
         users.delete(ws);
+        console.log(`Пользователь ${user?.username || userId} отключился`);
     });
 });
 
-// Функции для приватных чатов
+// Функции для приватных чатов (остаются без изменений)
 function startPrivateChat(initiatorWs, targetUserId) {
     const initiator = users.get(initiatorWs);
     if (!initiator) return;
     
-    // Находим целевого пользователя
     let targetWs = null;
     for (const [ws, user] of users.entries()) {
         if (user.id === targetUserId) {
@@ -135,9 +215,8 @@ function startPrivateChat(initiatorWs, targetUserId) {
     }
     
     const targetUser = users.get(targetWs);
-    
-    // Создаем или получаем комнату
     const roomId = generateRoomId(initiator.id, targetUserId);
+    
     if (!privateRooms.has(roomId)) {
         privateRooms.set(roomId, {
             users: [initiator.id, targetUserId],
@@ -145,7 +224,6 @@ function startPrivateChat(initiatorWs, targetUserId) {
         });
     }
     
-    // Уведомляем пользователей
     [initiatorWs, targetWs].forEach(ws => {
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
@@ -165,7 +243,6 @@ function sendPrivateMessage(senderWs, roomId, text) {
     const room = privateRooms.get(roomId);
     if (!room.users.includes(sender.id)) return;
     
-    // Создаем сообщение
     const message = {
         id: uuidv4(),
         senderId: sender.id,
@@ -175,10 +252,8 @@ function sendPrivateMessage(senderWs, roomId, text) {
         roomId: roomId
     };
     
-    // Сохраняем
     room.messages.push(message);
     
-    // Находим получателя
     const receiverId = room.users.find(id => id !== sender.id);
     let receiverWs = null;
     for (const [ws, user] of users.entries()) {
@@ -188,7 +263,6 @@ function sendPrivateMessage(senderWs, roomId, text) {
         }
     }
     
-    // Отправляем
     const sendMessage = (ws) => {
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
@@ -253,7 +327,7 @@ function sendUserList(ws) {
 
 // Маршруты
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html')); // Исправлено: без public/
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 app.get('/client.js', (req, res) => {
@@ -264,4 +338,5 @@ app.get('/client.js', (req, res) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Сервер запущен на порту ${PORT}`);
+    console.log(`Для работы звонков требуется HTTPS в продакшене`);
 });
