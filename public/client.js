@@ -4,69 +4,85 @@ let currentUser = {
     username: null
 };
 
-let users = new Map();          // userId -> {username, online}
-let activeChats = new Map();    // roomId -> {partnerId, partnerName, element}
-let currentChat = 'general';    // ID активного чата
+let users = new Map();
+let activeChats = new Map();
+let currentChat = 'general';
 
 // Подключение к WebSocket
 function connect() {
-    const username = document.getElementById('usernameInput').value.trim();
+    const usernameInput = document.getElementById('usernameInput');
+    if (!usernameInput) {
+        console.error('Не найден элемент usernameInput');
+        return;
+    }
+    
+    const username = usernameInput.value.trim();
     
     if (!username) {
         alert('Пожалуйста, введите имя пользователя');
         return;
     }
     
-    if (username.length > 20) {
-        alert('Имя не должно превышать 20 символов');
-        return;
-    }
+    updateStatus('⏳ Подключение...', 'connecting');
     
-    updateStatus('⏳ Подключение...');
-    
-    // Определяем протокол WebSocket
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}`;
     
+    console.log('Подключаемся к:', wsUrl);
     ws = new WebSocket(wsUrl);
     
     ws.onopen = () => {
         console.log('✅ WebSocket соединение установлено');
-        updateStatus('✅ Подключено');
+        updateStatus('✅ Подключено', 'connected');
         
-        // Сохраняем данные пользователя
         currentUser.username = username;
         
-        // Отправляем имя пользователя на сервер
         ws.send(JSON.stringify({
             type: 'set_username',
             username: username
         }));
         
-        // Скрываем экран входа
-        document.getElementById('loginScreen').style.display = 'none';
+        const loginScreen = document.getElementById('loginScreen');
+        if (loginScreen) {
+            loginScreen.style.display = 'none';
+        }
         
-        // Обновляем отображение текущего пользователя
-        document.getElementById('currentUsername').textContent = username;
+        const currentUsernameEl = document.getElementById('currentUsername');
+        if (currentUsernameEl) {
+            currentUsernameEl.textContent = username;
+        }
         
         // Запрашиваем список пользователей
-        ws.send(JSON.stringify({
-            type: 'get_users'
-        }));
+        setTimeout(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'get_users'
+                }));
+            }
+        }, 500);
     };
     
     ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            console.log('Получено:', data.type, data);
+            console.log('Получено:', data.type);
             
             switch (data.type) {
                 case 'connected':
                     currentUser.id = data.userId;
+                    console.log('User ID установлен:', currentUser.id);
                     break;
                     
                 case 'user_list':
                     updateUsersList(data.users);
+                    break;
+                    
+                case 'general_history':
+                    loadGeneralHistory(data.messages);
+                    break;
+                    
+                case 'general_message':
+                    displayGeneralMessage(data.data);
                     break;
                     
                 case 'private_room_created':
@@ -82,30 +98,28 @@ function connect() {
                     break;
                     
                 case 'error':
-                    alert('Ошибка: ' + data.message);
+                    console.error('Ошибка сервера:', data.message);
                     break;
             }
         } catch (error) {
-            console.error('Ошибка обработки сообщения:', error);
+            console.error('Ошибка обработки сообщения:', error, event.data);
         }
     };
     
     ws.onclose = (event) => {
         console.log('❌ WebSocket соединение закрыто');
-        updateStatus('❌ Отключено');
-        
-        // Показываем кнопку переподключения
+        updateStatus('❌ Отключено', 'disconnected');
         showReconnectButton();
     };
     
     ws.onerror = (error) => {
         console.error('❌ WebSocket ошибка:', error);
-        updateStatus('❌ Ошибка подключения');
+        updateStatus('❌ Ошибка подключения', 'error');
     };
 }
 
-// Обновление статуса подключения
-function updateStatus(text) {
+// Обновление статуса
+function updateStatus(text, status) {
     const statusText = document.getElementById('statusText');
     const connectionDot = document.getElementById('connectionDot');
     
@@ -114,28 +128,39 @@ function updateStatus(text) {
     }
     
     if (connectionDot) {
-        connectionDot.className = 'connection-dot ' + 
-            (text.includes('✅') ? 'connected' : 'disconnected');
+        connectionDot.className = 'connection-dot';
+        connectionDot.classList.add(status);
+    }
+    
+    // Также обновляем статус на экране входа
+    const loginStatusText = document.querySelector('#loginScreen .status-text');
+    if (loginStatusText) {
+        loginStatusText.textContent = text;
     }
 }
 
 // Показать кнопку переподключения
 function showReconnectButton() {
     const loginScreen = document.getElementById('loginScreen');
-    const loginForm = loginScreen.querySelector('.login-form');
-    
-    if (!loginForm.querySelector('.reconnect-btn')) {
-        const reconnectBtn = document.createElement('button');
-        reconnectBtn.className = 'btn';
-        reconnectBtn.textContent = '🔄 Переподключиться';
-        reconnectBtn.onclick = () => location.reload();
-        reconnectBtn.style.marginTop = '15px';
-        reconnectBtn.style.background = '#ff9800';
-        
-        loginForm.appendChild(reconnectBtn);
-    }
+    if (!loginScreen) return;
     
     loginScreen.style.display = 'flex';
+    
+    const loginForm = loginScreen.querySelector('.login-form');
+    if (!loginForm) return;
+    
+    // Удаляем старую кнопку, если есть
+    const oldBtn = loginForm.querySelector('.reconnect-btn');
+    if (oldBtn) oldBtn.remove();
+    
+    const reconnectBtn = document.createElement('button');
+    reconnectBtn.className = 'btn reconnect-btn';
+    reconnectBtn.textContent = '🔄 Переподключиться';
+    reconnectBtn.onclick = () => location.reload();
+    reconnectBtn.style.marginTop = '15px';
+    reconnectBtn.style.background = '#ff9800';
+    
+    loginForm.appendChild(reconnectBtn);
 }
 
 // Обновление списка пользователей
@@ -143,28 +168,29 @@ function updateUsersList(usersList) {
     const usersListElement = document.getElementById('usersList');
     const userCountElement = document.getElementById('userCount');
     
-    // Очищаем список
+    if (!usersListElement) return;
+    
     usersListElement.innerHTML = '';
     users.clear();
     
-    // Обновляем счетчик
     if (userCountElement) {
         userCountElement.textContent = `Пользователей онлайн: ${usersList.length}`;
     }
     
-    // Добавляем каждого пользователя
+    const onlineCountElement = document.getElementById('onlineCount');
+    if (onlineCountElement) {
+        onlineCountElement.textContent = usersList.length;
+    }
+    
     usersList.forEach(user => {
-        if (user.id === currentUser.id) return; // Пропускаем себя
+        if (user.id === currentUser.id) return;
         
-        // Сохраняем в Map
         users.set(user.id, user);
         
-        // Создаем элемент пользователя
         const userElement = document.createElement('div');
         userElement.className = 'user-item';
         userElement.dataset.userId = user.id;
         
-        // Первая буква имени для аватарки
         const firstLetter = user.username.charAt(0).toUpperCase();
         
         userElement.innerHTML = `
@@ -183,162 +209,49 @@ function updateUsersList(usersList) {
         
         usersListElement.appendChild(userElement);
     });
-    
-    // Обновляем счетчик в общем чате
-    document.getElementById('onlineCount').textContent = usersList.length;
 }
 
-// Начать приватный чат
-function startPrivateChat(targetUserId) {
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-        alert('Нет подключения к серверу');
-        return;
-    }
+// Загрузка истории общего чата
+function loadGeneralHistory(messages) {
+    const messagesContainer = document.getElementById('generalMessages');
+    if (!messagesContainer) return;
     
-    // Проверяем, не открыт ли уже чат с этим пользователем
-    for (const [roomId, chat] of activeChats.entries()) {
-        if (chat.partnerId === targetUserId) {
-            // Переключаемся на существующий чат
-            switchChat(roomId);
-            return;
-        }
-    }
+    messagesContainer.innerHTML = '';
     
-    // Отправляем запрос на создание приватного чата
-    ws.send(JSON.stringify({
-        type: 'start_private_chat',
-        targetUserId: targetUserId
-    }));
-}
-
-// Создание вкладки приватного чата
-function createPrivateChatTab(roomId, partnerName, partnerId) {
-    // Проверяем, не существует ли уже такой вкладки
-    if (activeChats.has(roomId)) {
-        switchChat(roomId);
-        return;
-    }
-    
-    // Создаем вкладку
-    const chatTabs = document.getElementById('chatTabs');
-    const tab = document.createElement('div');
-    tab.className = 'chat-tab';
-    tab.dataset.roomId = roomId;
-    tab.innerHTML = `
-        💬 ${partnerName}
-        <span class="tab-close" onclick="closePrivateChat('${roomId}', event)">×</span>
-    `;
-    
-    tab.onclick = () => switchChat(roomId);
-    chatTabs.appendChild(tab);
-    
-    // Создаем окно чата
-    const chatContent = document.getElementById('chatContent');
-    const chatWindow = document.createElement('div');
-    chatWindow.className = 'chat-window';
-    chatWindow.id = `chat_${roomId}`;
-    chatWindow.innerHTML = `
-        <div class="chat-header">
-            <h3>Приватный чат с <span class="chat-partner">${partnerName}</span></h3>
-        </div>
-        <div class="messages-container" id="messages_${roomId}">
-            <!-- Сообщения приватного чата -->
-        </div>
-        <div class="message-input-area">
-            <input type="text" class="message-input" id="input_${roomId}" 
-                   placeholder="Написать ${partnerName}..." autocomplete="off"
-                   onkeypress="handlePrivateKeyPress(event, '${roomId}')">
-            <button class="send-btn" onclick="sendPrivateMessage('${roomId}')">Отправить</button>
-        </div>
-    `;
-    
-    chatContent.appendChild(chatWindow);
-    
-    // Сохраняем информацию о чате
-    activeChats.set(roomId, {
-        partnerId: partnerId,
-        partnerName: partnerName,
-        element: chatWindow,
-        tab: tab
+    messages.forEach(message => {
+        const messageElement = createMessageElement(message, false);
+        messagesContainer.appendChild(messageElement);
     });
     
-    // Запрашиваем историю чата
-    ws.send(JSON.stringify({
-        type: 'get_private_history',
-        roomId: roomId
-    }));
-    
-    // Переключаемся на новый чат
-    switchChat(roomId);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
-// Переключение между чатами
-function switchChat(chatId) {
-    // Обновляем активные вкладки
-    document.querySelectorAll('.chat-tab').forEach(tab => {
-        tab.classList.remove('active');
-    });
+// Отображение сообщения общего чата
+function displayGeneralMessage(messageData) {
+    const messagesContainer = document.getElementById('generalMessages');
+    if (!messagesContainer) return;
     
-    document.querySelectorAll('.chat-window').forEach(window => {
-        window.classList.remove('active');
-    });
-    
-    // Активируем выбранную вкладку
-    const tab = document.querySelector(`.chat-tab[data-room-id="${chatId}"]`);
-    if (tab) {
-        tab.classList.add('active');
-    } else {
-        // Если это общий чат
-        document.querySelector('.chat-tab[data-chat="general"]').classList.add('active');
-    }
-    
-    // Активируем выбранное окно чата
-    const chatWindow = document.getElementById(`chat_${chatId}`) || 
-                       document.getElementById('generalChat');
-    if (chatWindow) {
-        chatWindow.classList.add('active');
-    }
-    
-    currentChat = chatId;
-    
-    // Фокусируемся на поле ввода
-    const input = document.getElementById(`input_${chatId}`) || 
-                  document.getElementById('generalMessageInput');
-    if (input) {
-        input.focus();
-    }
-}
-
-// Закрыть приватный чат
-function closePrivateChat(roomId, event) {
-    event.stopPropagation(); // Предотвращаем переключение чата
-    
-    // Удаляем вкладку
-    const tab = document.querySelector(`.chat-tab[data-room-id="${roomId}"]`);
-    if (tab) tab.remove();
-    
-    // Удаляем окно чата
-    const chatWindow = document.getElementById(`chat_${roomId}`);
-    if (chatWindow) chatWindow.remove();
-    
-    // Удаляем из активных чатов
-    activeChats.delete(roomId);
-    
-    // Переключаемся на общий чат
-    switchChat('general');
+    const messageElement = createMessageElement(messageData, false);
+    messagesContainer.appendChild(messageElement);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
 // Отправка сообщения в общий чат
 function sendGeneralMessage() {
     const input = document.getElementById('generalMessageInput');
+    if (!input) return;
+    
     const text = input.value.trim();
     
     if (!text || !ws || ws.readyState !== WebSocket.OPEN) {
         return;
     }
     
-    // В этой версии нет общего чата, только приватные
-    // Но можно добавить позже
+    ws.send(JSON.stringify({
+        type: 'general_message',
+        text: text
+    }));
+    
     input.value = '';
     input.focus();
 }
@@ -349,9 +262,131 @@ function handleGeneralKeyPress(event) {
     }
 }
 
-// Отправка приватного сообщения
+// Приватные чаты
+function startPrivateChat(targetUserId) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        alert('Нет подключения к серверу');
+        return;
+    }
+    
+    for (const [roomId, chat] of activeChats.entries()) {
+        if (chat.partnerId === targetUserId) {
+            switchChat(roomId);
+            return;
+        }
+    }
+    
+    ws.send(JSON.stringify({
+        type: 'start_private_chat',
+        targetUserId: targetUserId
+    }));
+}
+
+function createPrivateChatTab(roomId, partnerName, partnerId) {
+    if (activeChats.has(roomId)) {
+        switchChat(roomId);
+        return;
+    }
+    
+    const chatTabs = document.getElementById('chatTabs');
+    if (!chatTabs) return;
+    
+    const tab = document.createElement('div');
+    tab.className = 'chat-tab';
+    tab.dataset.roomId = roomId;
+    tab.innerHTML = `
+        💬 ${escapeHtml(partnerName)}
+        <span class="tab-close" onclick="closePrivateChat('${roomId}', event)">×</span>
+    `;
+    
+    tab.onclick = () => switchChat(roomId);
+    chatTabs.appendChild(tab);
+    
+    const chatContent = document.getElementById('chatContent');
+    if (!chatContent) return;
+    
+    const chatWindow = document.createElement('div');
+    chatWindow.className = 'chat-window';
+    chatWindow.id = `chat_${roomId}`;
+    chatWindow.innerHTML = `
+        <div class="chat-header">
+            <h3>Приватный чат с <span class="chat-partner">${escapeHtml(partnerName)}</span></h3>
+        </div>
+        <div class="messages-container" id="messages_${roomId}">
+            <!-- Сообщения приватного чата -->
+        </div>
+        <div class="message-input-area">
+            <input type="text" class="message-input" id="input_${roomId}" 
+                   placeholder="Написать ${escapeHtml(partnerName)}..." autocomplete="off"
+                   onkeypress="handlePrivateKeyPress(event, '${roomId}')">
+            <button class="send-btn" onclick="sendPrivateMessage('${roomId}')">Отправить</button>
+        </div>
+    `;
+    
+    chatContent.appendChild(chatWindow);
+    
+    activeChats.set(roomId, {
+        partnerId: partnerId,
+        partnerName: partnerName,
+        element: chatWindow,
+        tab: tab
+    });
+    
+    ws.send(JSON.stringify({
+        type: 'get_private_history',
+        roomId: roomId
+    }));
+    
+    switchChat(roomId);
+}
+
+function switchChat(chatId) {
+    document.querySelectorAll('.chat-tab').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    
+    document.querySelectorAll('.chat-window').forEach(window => {
+        window.classList.remove('active');
+    });
+    
+    if (chatId === 'general') {
+        const generalTab = document.querySelector('.chat-tab[data-chat="general"]');
+        if (generalTab) generalTab.classList.add('active');
+        
+        const generalChat = document.getElementById('generalChat');
+        if (generalChat) generalChat.classList.add('active');
+        
+        document.getElementById('generalMessageInput')?.focus();
+    } else {
+        const tab = document.querySelector(`.chat-tab[data-room-id="${chatId}"]`);
+        if (tab) tab.classList.add('active');
+        
+        const chatWindow = document.getElementById(`chat_${chatId}`);
+        if (chatWindow) chatWindow.classList.add('active');
+        
+        document.getElementById(`input_${chatId}`)?.focus();
+    }
+    
+    currentChat = chatId;
+}
+
+function closePrivateChat(roomId, event) {
+    if (event) event.stopPropagation();
+    
+    const tab = document.querySelector(`.chat-tab[data-room-id="${roomId}"]`);
+    if (tab) tab.remove();
+    
+    const chatWindow = document.getElementById(`chat_${roomId}`);
+    if (chatWindow) chatWindow.remove();
+    
+    activeChats.delete(roomId);
+    switchChat('general');
+}
+
 function sendPrivateMessage(roomId) {
     const input = document.getElementById(`input_${roomId}`);
+    if (!input) return;
+    
     const text = input.value.trim();
     
     if (!text || !ws || ws.readyState !== WebSocket.OPEN) {
@@ -374,42 +409,57 @@ function handlePrivateKeyPress(event, roomId) {
     }
 }
 
-// Отображение приватного сообщения
 function displayPrivateMessage(messageData) {
     const roomId = messageData.roomId;
     const messagesContainer = document.getElementById(`messages_${roomId}`);
     
     if (!messagesContainer) {
-        // Если окно чата еще не создано, создаем его
         const partner = users.get(messageData.senderId);
         if (partner) {
             createPrivateChatTab(roomId, partner.username, messageData.senderId);
-            // Повторно вызываем после создания
             setTimeout(() => displayPrivateMessage(messageData), 100);
         }
         return;
     }
     
-    const messageElement = createMessageElement(messageData);
+    const messageElement = createMessageElement(messageData, true);
     messagesContainer.appendChild(messageElement);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
+function loadPrivateHistory(roomId, messages) {
+    const messagesContainer = document.getElementById(`messages_${roomId}`);
+    if (!messagesContainer) return;
+    
+    messagesContainer.innerHTML = '';
+    
+    messages.forEach(message => {
+        const messageElement = createMessageElement(message, true);
+        messagesContainer.appendChild(messageElement);
+    });
+    
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
 // Создание элемента сообщения
-function createMessageElement(messageData) {
-    const isOwn = messageData.senderId === currentUser.id;
+function createMessageElement(messageData, isPrivate = false) {
+    const isOwn = messageData.senderId === currentUser.id || 
+                  messageData.userId === currentUser.id;
+    
     const time = new Date(messageData.time).toLocaleTimeString([], { 
         hour: '2-digit', 
         minute: '2-digit' 
     });
     
     const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${isOwn ? 'own' : ''} ${messageData.roomId ? 'private' : ''}`;
+    messageDiv.className = `message ${isOwn ? 'own' : ''} ${isPrivate ? 'private' : ''}`;
+    
+    const username = messageData.senderName || messageData.username;
     
     messageDiv.innerHTML = `
         <div class="message-header">
             <span class="message-username">
-                ${escapeHtml(messageData.senderName)} ${isOwn ? '(Вы)' : ''}
+                ${escapeHtml(username)} ${isOwn ? '(Вы)' : ''}
             </span>
             <span class="message-time">${time}</span>
         </div>
@@ -419,36 +469,29 @@ function createMessageElement(messageData) {
     return messageDiv;
 }
 
-// Загрузка истории приватного чата
-function loadPrivateHistory(roomId, messages) {
-    const messagesContainer = document.getElementById(`messages_${roomId}`);
-    if (!messagesContainer) return;
-    
-    messagesContainer.innerHTML = '';
-    
-    messages.forEach(message => {
-        const messageElement = createMessageElement(message);
-        messagesContainer.appendChild(messageElement);
-    });
-    
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-}
-
 // Экранирование HTML
 function escapeHtml(text) {
+    if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
 }
 
-// Автофокус на поле входа при загрузке
+// Инициализация
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('usernameInput').focus();
+    const usernameInput = document.getElementById('usernameInput');
+    if (usernameInput) {
+        usernameInput.focus();
+        usernameInput.addEventListener('keypress', (event) => {
+            if (event.key === 'Enter') {
+                connect();
+            }
+        });
+    }
     
-    // Обработка нажатия Enter в поле входа
-    document.getElementById('usernameInput').addEventListener('keypress', (event) => {
-        if (event.key === 'Enter') {
-            connect();
-        }
-    });
+    // Обработчики для переключения вкладок
+    const generalTab = document.querySelector('.chat-tab[data-chat="general"]');
+    if (generalTab) {
+        generalTab.onclick = () => switchChat('general');
+    }
 });
