@@ -461,10 +461,27 @@
             background: #ff4444;
         }
         
+        .connection-dot.connecting {
+            background: #ff9800;
+            animation: pulse 1s infinite;
+        }
+        
+        .connection-dot.error {
+            background: #ff4444;
+            animation: none;
+        }
+        
         @keyframes pulse {
             0% { opacity: 1; }
             50% { opacity: 0.5; }
             100% { opacity: 1; }
+        }
+        
+        /* Статус в форме входа */
+        .login-form .status-text {
+            margin-top: 15px;
+            font-size: 0.9em;
+            color: #666;
         }
         
         /* Адаптивность */
@@ -521,11 +538,8 @@
                         <h2>🚀 Вход в мессенджер</h2>
                         <input type="text" id="usernameInput" placeholder="Введите ваше имя" autocomplete="off">
                         <button class="btn" onclick="connect()">Войти в чат</button>
-                        <div class="status-bar" style="margin-top: 20px;">
-                            <div class="connection-status">
-                                <span class="connection-dot disconnected"></span>
-                                <span id="statusText">Отключено</span>
-                            </div>
+                        <div class="status-text" id="loginStatus">
+                            Статус: Отключено
                         </div>
                     </div>
                 </div>
