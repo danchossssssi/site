@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Мессенджер с приватными чатами и звонками</title>
+    <title>Мессенджер с групповыми звонками</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -288,6 +288,28 @@
             box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
         }
         
+        /* Кнопка группового звонка в общем чате */
+        .group-call-btn {
+            background: #FF9800;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            margin-left: 10px;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .group-call-btn:hover {
+            background: #F57C00;
+            transform: translateY(-2px);
+        }
+        
         /* Окно чата */
         .chat-window {
             flex: 1;
@@ -406,6 +428,20 @@
             border: 1px dashed #ffcc00;
         }
         
+        .system-message button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        
+        .system-message button:hover {
+            background: #45a049;
+        }
+        
         .message-input-area {
             padding: 20px;
             background: white;
@@ -445,7 +481,7 @@
             box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
         }
         
-        /* Интерфейс звонка */
+        /* Интерфейс приватного звонка */
         #callContainer {
             display: none;
             position: fixed;
@@ -484,9 +520,9 @@
             margin-top: 20px;
         }
         
-        /* ДОБАВЛЕН СТИЛЬ ДЛЯ КНОПКИ МИКРОФОНА */
+        /* Кнопка микрофона */
         #toggleMicBtn {
-            background: #2196F3; /* Синий цвет для включенного микрофона */
+            background: #2196F3;
             color: white;
             border: none;
             padding: 12px 20px;
@@ -495,7 +531,7 @@
             font-size: 1em;
             font-weight: bold;
             transition: all 0.3s;
-            display: none; /* Скрыта по умолчанию, показывается при звонке */
+            display: none;
         }
         
         #toggleMicBtn:hover {
@@ -549,6 +585,94 @@
             background: #2196F3;
             color: white;
             margin-top: 10px;
+        }
+        
+        /* Интерфейс группового звонка */
+        #groupCallContainer {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            z-index: 2001;
+            min-width: 400px;
+            max-width: 500px;
+            border: 3px solid #FF9800;
+        }
+        
+        #groupCallTitle {
+            font-size: 1.5em;
+            color: #333;
+            margin-bottom: 15px;
+            font-weight: bold;
+            text-align: center;
+        }
+        
+        #groupCallStatus {
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 1.1em;
+            min-height: 24px;
+            text-align: center;
+        }
+        
+        .group-call-participants {
+            background: #f5f5f5;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        
+        .group-call-participants h4 {
+            color: #666;
+            margin-bottom: 10px;
+            font-size: 1em;
+        }
+        
+        .group-call-participants ul {
+            list-style: none;
+        }
+        
+        .group-call-participants li {
+            padding: 8px 12px;
+            margin-bottom: 5px;
+            background: white;
+            border-radius: 5px;
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .group-call-participants li strong {
+            color: #333;
+        }
+        
+        .group-call-controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+        }
+        
+        #endGroupCallBtn {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        
+        #endGroupCallBtn:hover {
+            background: #d32f2f;
+            transform: scale(1.05);
         }
         
         .empty-chat {
@@ -641,24 +765,20 @@
                 height: calc(100vh - 200px);
             }
             
-            #callContainer {
+            #callContainer, #groupCallContainer {
                 width: 90%;
                 max-width: 350px;
                 padding: 20px;
             }
             
-            .call-controls {
+            .call-controls, .group-call-controls {
                 flex-direction: column;
                 align-items: center;
             }
             
-            .call-btn {
+            .call-btn, #endGroupCallBtn, #toggleMicBtn {
                 width: 100%;
                 margin-bottom: 10px;
-            }
-            
-            #toggleMicBtn {
-                width: 100%;
             }
         }
     </style>
@@ -709,7 +829,13 @@
                 <div class="chat-window active" id="generalChat">
                     <div class="chat-header">
                         <h3>🌐 Общий чат</h3>
-                        <div>Участников: <span id="onlineCount">0</span></div>
+                        <div style="display: flex; align-items: center;">
+                            <div>Участников: <span id="onlineCount">0</span></div>
+                            <!-- ДОБАВЛЕНА КНОПКА ГРУППОВОГО ЗВОНКА -->
+                            <button class="group-call-btn" onclick="startGroupCall()">
+                                🎙️ Групповой звонок
+                            </button>
+                        </div>
                     </div>
                     
                     <div class="messages-container" id="generalMessages">
@@ -737,7 +863,7 @@
             </div>
         </div>
         
-        <!-- Интерфейс звонка (ДОБАВЛЕНА КНОПКА МИКРОФОНА) -->
+        <!-- Интерфейс приватного звонка -->
         <div id="callContainer">
             <div id="callTitle">Звонок</div>
             <div id="callStatus">Готов к звонку</div>
@@ -745,17 +871,13 @@
             <!-- Аудио элементы -->
             <audio id="remoteAudio" autoplay playsinline></audio>
             <audio id="ringtone" loop>
-                <!-- Базовый рингтон (можно заменить) -->
                 <source src="https://assets.mixkit.co/active_storage/sfx/226/226-preview.mp3" type="audio/mpeg">
             </audio>
             
             <div class="call-controls">
-                <!-- Основные кнопки управления звонком -->
                 <button id="acceptCallBtn" class="call-btn" onclick="acceptCall()">Принять</button>
                 <button id="rejectCallBtn" class="call-btn" onclick="rejectCall()">Отклонить</button>
                 <button id="endCallBtn" class="call-btn" onclick="endCall()">Завершить</button>
-                
-                <!-- ДОБАВЛЕНА КНОПКА ПЕРЕКЛЮЧЕНИЯ МИКРОФОНА -->
                 <button id="toggleMicBtn" class="call-btn" onclick="toggleMicrophone()">
                     🎤 Выключить микрофон
                 </button>
@@ -764,6 +886,28 @@
             <button id="playAudioBtn" class="call-btn" onclick="document.getElementById('remoteAudio').play()">
                 Включить звук
             </button>
+        </div>
+        
+        <!-- ДОБАВЛЕН: Интерфейс группового звонка -->
+        <div id="groupCallContainer">
+            <div id="groupCallTitle">🎙️ Групповой звонок</div>
+            <div id="groupCallStatus">Подключение...</div>
+            
+            <div class="group-call-participants">
+                <h4>👥 Участники:</h4>
+                <ul id="groupCallParticipants">
+                    <li>Загрузка...</li>
+                </ul>
+            </div>
+            
+            <div class="group-call-controls">
+                <button id="endGroupCallBtn" onclick="endGroupCall()">
+                    Завершить для всех
+                </button>
+                <button id="toggleMicBtn" onclick="toggleMicrophone()" style="background: #2196F3;">
+                    🎤 Выключить микрофон
+                </button>
+            </div>
         </div>
     </div>
 
