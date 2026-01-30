@@ -8,10 +8,10 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// Хранилище данных
+// Хранилища данных
 const users = new Map();           // ws -> {id, username, online}
 const privateRooms = new Map();    // roomId -> {user1, user2, messages[]}
-const userRooms = new Map();       // userId -> Set(roomIds)
+const generalMessages = [];        // Сообщения общего чата
 
 // Генерация ID комнаты
 function generateRoomId(userId1, userId2) {
@@ -19,7 +19,7 @@ function generateRoomId(userId1, userId2) {
 }
 
 // Middleware для статических файлов
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(__dirname)); // Исправлено: ищем файлы в корне
 
 // WebSocket обработка
 wss.on('connection', (ws) => {
@@ -45,27 +45,55 @@ wss.on('connection', (ws) => {
                         online: true
                     });
                     
-                    // Отправляем список онлайн пользователей всем
+                    // Отправляем историю общего чата
+                    ws.send(JSON.stringify({
+                        type: 'general_history',
+                        messages: generalMessages.slice(-50)
+                    }));
+                    
+                    // Обновляем список пользователей
                     broadcastUserList();
                     break;
                     
                 case 'get_users':
-                    // Отправляем список пользователей текущему клиенту
                     sendUserList(ws);
                     break;
                     
                 case 'start_private_chat':
-                    // Начинаем приватный чат
                     startPrivateChat(ws, message.targetUserId);
                     break;
                     
                 case 'private_message':
-                    // Отправляем приватное сообщение
                     sendPrivateMessage(ws, message.roomId, message.text);
                     break;
                     
+                case 'general_message':
+                    // ОБЩИЙ ЧАТ: Сохраняем и рассылаем сообщение
+                    const user = users.get(ws);
+                    if (user) {
+                        const msg = {
+                            id: uuidv4(),
+                            userId: user.id,
+                            username: user.username,
+                            text: message.text,
+                            time: new Date().toISOString()
+                        };
+                        
+                        generalMessages.push(msg);
+                        
+                        // Рассылаем всем
+                        wss.clients.forEach(client => {
+                            if (client.readyState === WebSocket.OPEN) {
+                                client.send(JSON.stringify({
+                                    type: 'general_message',
+                                    data: msg
+                                }));
+                            }
+                        });
+                    }
+                    break;
+                    
                 case 'get_private_history':
-                    // Запрашиваем историю приватного чата
                     sendPrivateHistory(ws, message.roomId);
                     break;
             }
@@ -84,7 +112,7 @@ wss.on('connection', (ws) => {
     });
 });
 
-// Функции для работы с приватными чатами
+// Функции для приватных чатов
 function startPrivateChat(initiatorWs, targetUserId) {
     const initiator = users.get(initiatorWs);
     if (!initiator) return;
@@ -115,18 +143,9 @@ function startPrivateChat(initiatorWs, targetUserId) {
             users: [initiator.id, targetUserId],
             messages: []
         });
-        
-        // Добавляем комнату пользователям
-        if (!userRooms.has(initiator.id)) userRooms.set(initiator.id, new Set());
-        if (!userRooms.has(targetUserId)) userRooms.set(targetUserId, new Set());
-        
-        userRooms.get(initiator.id).add(roomId);
-        userRooms.get(targetUserId).add(roomId);
     }
     
-    const room = privateRooms.get(roomId);
-    
-    // Уведомляем пользователей о создании комнаты
+    // Уведомляем пользователей
     [initiatorWs, targetWs].forEach(ws => {
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
@@ -156,7 +175,7 @@ function sendPrivateMessage(senderWs, roomId, text) {
         roomId: roomId
     };
     
-    // Сохраняем в историю
+    // Сохраняем
     room.messages.push(message);
     
     // Находим получателя
@@ -169,7 +188,7 @@ function sendPrivateMessage(senderWs, roomId, text) {
         }
     }
     
-    // Отправляем сообщение обоим пользователям
+    // Отправляем
     const sendMessage = (ws) => {
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({
@@ -197,7 +216,7 @@ function sendPrivateHistory(ws, roomId) {
     }));
 }
 
-// Работа со списком пользователей
+// Функции для списка пользователей
 function broadcastUserList() {
     const userList = Array.from(users.values())
         .filter(user => user.online)
@@ -232,19 +251,13 @@ function sendUserList(ws) {
     }));
 }
 
-// Общая функция рассылки
-function broadcast(data, excludeWs = null) {
-    const message = JSON.stringify(data);
-    wss.clients.forEach(client => {
-        if (client !== excludeWs && client.readyState === WebSocket.OPEN) {
-            client.send(message);
-        }
-    });
-}
-
 // Маршруты
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, 'index.html')); // Исправлено: без public/
+});
+
+app.get('/client.js', (req, res) => {
+    res.sendFile(path.join(__dirname, 'client.js'));
 });
 
 // Запуск сервера
