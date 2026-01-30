@@ -27,6 +27,42 @@ const servers = {
     ]
 };
 
+// ===== ДОБАВЛЕНО: Переменная для состояния микрофона =====
+let isMicMuted = false;
+
+// ===== ФУНКЦИЯ ДЛЯ ПЕРЕКЛЮЧЕНИЯ МИКРОФОНА =====
+function toggleMicrophone() {
+    if (!localStream) {
+        console.log('Локальный поток не найден.');
+        return;
+    }
+    
+    // Получаем все аудиодорожки из локального потока
+    const audioTracks = localStream.getAudioTracks();
+    
+    if (audioTracks.length === 0) {
+        console.log('Аудиодорожки не найдены.');
+        return;
+    }
+    
+    // Переключаем состояние всех аудиодорожек
+    isMicMuted = !isMicMuted;
+    audioTracks.forEach(track => {
+        track.enabled = !isMicMuted; // false = микрофон выключен
+    });
+    
+    // Обновляем текст и стиль кнопки
+    const micBtn = document.getElementById('toggleMicBtn');
+    if (micBtn) {
+        micBtn.textContent = isMicMuted ? '🎤 Включить микрофон' : '🎤 Выключить микрофон';
+        micBtn.style.background = isMicMuted ? '#757575' : '#2196F3'; // Серый/Синий
+        console.log(`Микрофон ${isMicMuted ? 'выключен' : 'включен'}.`);
+    }
+    
+    // Показываем уведомление о состоянии микрофона
+    updateCallStatus(isMicMuted ? 'Микрофон выключен' : 'Микрофон включен');
+}
+
 // ===== ОСНОВНОЕ ПОДКЛЮЧЕНИЕ =====
 function connect() {
     const usernameInput = document.getElementById('usernameInput');
@@ -184,6 +220,9 @@ function startVoiceCall(targetUserId, targetUserName) {
         status: 'calling'
     };
     
+    // СБРОС СОСТОЯНИЯ МИКРОФОНА ПРИ НОВОМ ЗВОНКЕ
+    isMicMuted = false;
+    
     showCallInterface(`Звонок ${targetUserName}...`, false);
     updateCallStatus('Набор номера...');
     
@@ -225,6 +264,14 @@ function startVoiceCall(targetUserId, targetUserName) {
         
         currentCall.status = 'ringing';
         updateCallStatus('Вызов... Ожидание ответа');
+        
+        // Обновляем кнопку микрофона при начале звонка
+        const micBtn = document.getElementById('toggleMicBtn');
+        if (micBtn) {
+            micBtn.textContent = '🎤 Выключить микрофон';
+            micBtn.style.background = '#2196F3';
+            micBtn.style.display = 'inline-block';
+        }
         
         // Таймаут на звонок (60 секунд)
         setTimeout(() => {
@@ -294,7 +341,7 @@ function createPeerConnection() {
             if (peerConnection.iceConnectionState === 'connected') {
                 currentCall.status = 'in_call';
                 updateCallStatus('Разговор идет...');
-                hideCallButtons();
+                hideCallAcceptRejectButtons();
             }
         };
         
@@ -330,6 +377,9 @@ function handleIncomingCall(offer, callerId, callerName, callId) {
         status: 'ringing'
     };
     
+    // СБРОС СОСТОЯНИЯ МИКРОФОНА ПРИ ВХОДЯЩЕМ ЗВОНКЕ
+    isMicMuted = false;
+    
     // Сохраняем offer
     window.incomingOffer = offer;
     
@@ -339,6 +389,12 @@ function handleIncomingCall(offer, callerId, callerName, callId) {
     
     // Воспроизводим звук вызова
     playRingtone();
+    
+    // Скрываем кнопку микрофона до принятия звонка
+    const micBtn = document.getElementById('toggleMicBtn');
+    if (micBtn) {
+        micBtn.style.display = 'none';
+    }
     
     // Автоотклонение через 45 секунд
     setTimeout(() => {
@@ -393,7 +449,16 @@ function acceptCall() {
         }));
         
         updateCallStatus('Разговор идет...');
-        hideCallButtons();
+        hideCallAcceptRejectButtons();
+        
+        // ПОКАЗЫВАЕМ КНОПКУ МИКРОФОНА ПРИ ПРИНЯТИИ ЗВОНКА
+        const micBtn = document.getElementById('toggleMicBtn');
+        if (micBtn) {
+            micBtn.textContent = '🎤 Выключить микрофон';
+            micBtn.style.background = '#2196F3';
+            micBtn.style.display = 'inline-block';
+        }
+        
         delete window.incomingOffer;
     })
     .catch(error => {
@@ -413,7 +478,7 @@ function handleCallAnswer(answer, callId) {
             console.log('Удаленное описание установлено');
             currentCall.status = 'in_call';
             updateCallStatus('Разговор идет...');
-            hideCallButtons();
+            hideCallAcceptRejectButtons();
         })
         .catch(error => {
             console.error('Ошибка установки удаленного описания:', error);
@@ -511,6 +576,7 @@ function resetCallState() {
         callId: null,
         status: 'idle'
     };
+    isMicMuted = false; // СБРАСЫВАЕМ СОСТОЯНИЕ МИКРОФОНА
     window.incomingOffer = null;
 }
 
@@ -560,7 +626,7 @@ function showCallInterface(title, showAccept = false) {
     }
 }
 
-function hideCallButtons() {
+function hideCallAcceptRejectButtons() {
     const acceptBtn = document.getElementById('acceptCallBtn');
     const rejectBtn = document.getElementById('rejectCallBtn');
     const endBtn = document.getElementById('endCallBtn');
@@ -574,6 +640,12 @@ function hideCallInterface() {
     const container = document.getElementById('callContainer');
     if (container) {
         container.style.display = 'none';
+    }
+    
+    // Скрываем кнопку микрофона при завершении звонка
+    const micBtn = document.getElementById('toggleMicBtn');
+    if (micBtn) {
+        micBtn.style.display = 'none';
     }
 }
 
