@@ -12,17 +12,16 @@ const wss = new WebSocket.Server({ server });
 const users = new Map();           // ws -> {id, username, online}
 const privateRooms = new Map();    // roomId -> {user1, user2, messages[]}
 const generalMessages = [];        // Сообщения общего чата
-const activeCalls = new Map();     // callId -> {callerId, receiverId, status}
+
+// ===== ДОБАВЛЕНО: Хранилище для групповых звонков =====
+const groupCalls = new Map();      // callId -> {participants: Set(userIds), creatorId}
 
 // Генерация ID комнаты
 function generateRoomId(userId1, userId2) {
     return [userId1, userId2].sort().join('_');
 }
 
-// Middleware для статических файлов
-app.use(express.static(__dirname));
-
-// Функция для поиска WebSocket по userId
+// Поиск WebSocket по userId
 function findWsByUserId(userId) {
     for (const [ws, user] of users.entries()) {
         if (user.id === userId) {
@@ -31,6 +30,9 @@ function findWsByUserId(userId) {
     }
     return null;
 }
+
+// Middleware для статических файлов
+app.use(express.static(__dirname));
 
 // WebSocket обработка
 wss.on('connection', (ws) => {
@@ -46,7 +48,6 @@ wss.on('connection', (ws) => {
     ws.on('message', (data) => {
         try {
             const message = JSON.parse(data.toString());
-            console.log('Получено сообщение типа:', message.type);
             
             switch (message.type) {
                 case 'set_username':
@@ -109,7 +110,7 @@ wss.on('connection', (ws) => {
                     sendPrivateHistory(ws, message.roomId);
                     break;
                     
-                // ===== ЗВОНКИ =====
+                // ===== ЗВОНКИ (приватные) =====
                 case 'call_offer':
                     // Пересылаем предложение о звонке получателю
                     const receiverWs = findWsByUserId(message.targetUserId);
@@ -176,6 +177,109 @@ wss.on('connection', (ws) => {
                         }));
                     }
                     break;
+                    
+                // ===== ДОБАВЛЕНО: ГРУППОВЫЕ ЗВОНКИ В ОБЩИЙ ЧАТ =====
+                case 'group_call_start':
+                    // Создание группового звонка
+                    const callId = message.callId || `group_${uuidv4()}`;
+                    groupCalls.set(callId, {
+                        participants: new Set([userId]),
+                        creatorId: userId,
+                        creatorName: users.get(ws)?.username || 'Неизвестный'
+                    });
+                    
+                    // Уведомляем всех в общем чате
+                    broadcastToGeneralChat({
+                        type: 'group_call_started',
+                        callId: callId,
+                        creatorName: users.get(ws)?.username,
+                        creatorId: userId
+                    });
+                    break;
+                    
+                case 'group_call_join':
+                    // Пользователь хочет присоединиться к групповому звонку
+                    const call = groupCalls.get(message.callId);
+                    if (call) {
+                        call.participants.add(userId);
+                        
+                        // Отправляем участнику список уже подключенных
+                        ws.send(JSON.stringify({
+                            type: 'group_call_participants',
+                            callId: message.callId,
+                            participants: Array.from(call.participants).map(pid => {
+                                const userWs = findWsByUserId(pid);
+                                return userWs ? users.get(userWs)?.username : 'Unknown';
+                            })
+                        }));
+                        
+                        // Уведомляем всех о новом участнике
+                        broadcastToCallParticipants(message.callId, {
+                            type: 'group_call_user_joined',
+                            callId: message.callId,
+                            userId: userId,
+                            username: users.get(ws)?.username
+                        }, userId);
+                    }
+                    break;
+                    
+                case 'group_call_leave':
+                    // Пользователь покидает групповой звонок
+                    const callToLeave = groupCalls.get(message.callId);
+                    if (callToLeave) {
+                        callToLeave.participants.delete(userId);
+                        
+                        // Если участников не осталось, удаляем звонок
+                        if (callToLeave.participants.size === 0) {
+                            groupCalls.delete(message.callId);
+                        } else {
+                            // Уведомляем остальных
+                            broadcastToCallParticipants(message.callId, {
+                                type: 'group_call_user_left',
+                                callId: message.callId,
+                                userId: userId,
+                                username: users.get(ws)?.username
+                            });
+                        }
+                    }
+                    break;
+                    
+                case 'group_call_signal':
+                    // Пересылка сигналов WebRTC между участниками группового звонка
+                    const targetCall = groupCalls.get(message.callId);
+                    if (targetCall && targetCall.participants.has(userId)) {
+                        // Отправляем сигнал всем, кроме отправителя
+                        targetCall.participants.forEach(participantId => {
+                            if (participantId !== userId) {
+                                const participantWs = findWsByUserId(participantId);
+                                if (participantWs && participantWs.readyState === WebSocket.OPEN) {
+                                    participantWs.send(JSON.stringify({
+                                        type: 'group_call_signal',
+                                        callId: message.callId,
+                                        senderId: userId,
+                                        signal: message.signal
+                                    }));
+                                }
+                            }
+                        });
+                    }
+                    break;
+                    
+                case 'group_call_end':
+                    // Создатель завершает групповой звонок
+                    const callToEnd = groupCalls.get(message.callId);
+                    if (callToEnd && callToEnd.creatorId === userId) {
+                        // Уведомляем всех участников
+                        broadcastToCallParticipants(message.callId, {
+                            type: 'group_call_ended',
+                            callId: message.callId,
+                            endedBy: users.get(ws)?.username
+                        });
+                        
+                        // Удаляем звонок
+                        groupCalls.delete(message.callId);
+                    }
+                    break;
             }
         } catch (error) {
             console.error('Ошибка обработки сообщения:', error);
@@ -187,13 +291,59 @@ wss.on('connection', (ws) => {
         if (user) {
             user.online = false;
             broadcastUserList();
+            
+            // Удаляем пользователя из всех групповых звонков
+            groupCalls.forEach((call, callId) => {
+                if (call.participants.has(user.id)) {
+                    call.participants.delete(user.id);
+                    
+                    // Уведомляем остальных участников
+                    broadcastToCallParticipants(callId, {
+                        type: 'group_call_user_left',
+                        callId: callId,
+                        userId: user.id,
+                        username: user.username
+                    });
+                    
+                    // Если участников не осталось, удаляем звонок
+                    if (call.participants.size === 0) {
+                        groupCalls.delete(callId);
+                    }
+                }
+            });
         }
         users.delete(ws);
         console.log(`Пользователь ${user?.username || userId} отключился`);
     });
 });
 
-// Функции для приватных чатов (остаются без изменений)
+// ===== ДОБАВЛЕНЫ ФУНКЦИИ ДЛЯ ГРУППОВЫХ ЗВОНКОВ =====
+
+// Рассылка сообщения всем участникам группового звонка
+function broadcastToCallParticipants(callId, message, excludeUserId = null) {
+    const call = groupCalls.get(callId);
+    if (!call) return;
+    
+    call.participants.forEach(participantId => {
+        if (participantId !== excludeUserId) {
+            const participantWs = findWsByUserId(participantId);
+            if (participantWs && participantWs.readyState === WebSocket.OPEN) {
+                participantWs.send(JSON.stringify(message));
+            }
+        }
+    });
+}
+
+// Рассылка сообщения всем в общем чате
+function broadcastToGeneralChat(message) {
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(message));
+        }
+    });
+}
+
+// ===== ФУНКЦИИ ДЛЯ ПРИВАТНЫХ ЧАТОВ =====
 function startPrivateChat(initiatorWs, targetUserId) {
     const initiator = users.get(initiatorWs);
     if (!initiator) return;
@@ -338,5 +488,5 @@ app.get('/client.js', (req, res) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Сервер запущен на порту ${PORT}`);
-    console.log(`Для работы звонков требуется HTTPS в продакшене`);
+    console.log(`Поддерживаются групповые звонки в общем чате!`);
 });
