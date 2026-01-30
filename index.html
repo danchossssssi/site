@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Мессенджер с приватными чатами</title>
+    <title>Мессенджер с приватными чатами и звонками</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
@@ -22,6 +22,7 @@
             overflow: hidden;
             height: 90vh;
             display: flex;
+            position: relative;
         }
         
         /* Левая панель - список пользователей */
@@ -150,6 +151,22 @@
         
         .start-chat-btn:hover {
             background: #764ba2;
+            transform: scale(1.05);
+        }
+        
+        .call-btn {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s;
+        }
+        
+        .call-btn:hover {
+            background: #45a049;
             transform: scale(1.05);
         }
         
@@ -306,6 +323,20 @@
             font-weight: bold;
         }
         
+        .call-btn-in-chat {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .call-btn-in-chat:hover {
+            background: #45a049;
+        }
+        
         .messages-container {
             flex: 1;
             overflow-y: auto;
@@ -414,6 +445,91 @@
             box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
         }
         
+        /* Интерфейс звонка */
+        #callContainer {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            z-index: 2000;
+            min-width: 300px;
+            text-align: center;
+            border: 3px solid #4CAF50;
+        }
+        
+        #callTitle {
+            font-size: 1.5em;
+            color: #333;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+        
+        #callStatus {
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 1.1em;
+            min-height: 24px;
+        }
+        
+        .call-controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .call-btn {
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        
+        #acceptCallBtn {
+            background: #4CAF50;
+            color: white;
+        }
+        
+        #acceptCallBtn:hover {
+            background: #45a049;
+            transform: scale(1.05);
+        }
+        
+        #rejectCallBtn {
+            background: #f44336;
+            color: white;
+        }
+        
+        #rejectCallBtn:hover {
+            background: #d32f2f;
+            transform: scale(1.05);
+        }
+        
+        #endCallBtn {
+            background: #f44336;
+            color: white;
+        }
+        
+        #endCallBtn:hover {
+            background: #d32f2f;
+            transform: scale(1.05);
+        }
+        
+        #playAudioBtn {
+            display: none;
+            background: #2196F3;
+            color: white;
+            margin-top: 10px;
+        }
+        
         .empty-chat {
             display: flex;
             flex-direction: column;
@@ -477,11 +593,15 @@
             100% { opacity: 1; }
         }
         
-        /* Статус в форме входа */
         .login-form .status-text {
             margin-top: 15px;
             font-size: 0.9em;
             color: #666;
+        }
+        
+        /* Аудио элементы (скрытые) */
+        audio {
+            display: none;
         }
         
         /* Адаптивность */
@@ -498,6 +618,11 @@
             
             #chatContainer {
                 height: calc(100vh - 200px);
+            }
+            
+            #callContainer {
+                width: 90%;
+                max-width: 350px;
             }
         }
     </style>
@@ -574,6 +699,29 @@
                 </div>
                 <div id="userCount">Пользователей онлайн: 0</div>
             </div>
+        </div>
+        
+        <!-- Интерфейс звонка -->
+        <div id="callContainer">
+            <div id="callTitle">Звонок</div>
+            <div id="callStatus">Готов к звонку</div>
+            
+            <!-- Аудио элементы -->
+            <audio id="remoteAudio" autoplay playsinline></audio>
+            <audio id="ringtone" loop>
+                <!-- Базовый рингтон (можно заменить) -->
+                <source src="https://assets.mixkit.co/active_storage/sfx/226/226-preview.mp3" type="audio/mpeg">
+            </audio>
+            
+            <div class="call-controls">
+                <button id="acceptCallBtn" class="call-btn" onclick="acceptCall()">Принять</button>
+                <button id="rejectCallBtn" class="call-btn" onclick="rejectCall()">Отклонить</button>
+                <button id="endCallBtn" class="call-btn" onclick="endCall()">Завершить</button>
+            </div>
+            
+            <button id="playAudioBtn" class="call-btn" onclick="document.getElementById('remoteAudio').play()">
+                Включить звук
+            </button>
         </div>
     </div>
 
