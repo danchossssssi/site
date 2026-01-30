@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Простой мессенджер</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        #app {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 { 
+            font-size: 2.5em; 
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .header p { 
+            opacity: 0.9; 
+            font-size: 1.1em;
+        }
+        
+        .container {
+            display: flex;
+            height: 70vh;
+        }
+        
+        #loginScreen {
+            padding: 60px 40px;
+            text-align: center;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #loginScreen h2 {
+            margin-bottom: 30px;
+            color: #333;
+            font-size: 2em;
+        }
+        
+        #usernameInput {
+            width: 300px;
+            padding: 18px 25px;
+            font-size: 18px;
+            border: 2px solid #e0e0e0;
+            border-radius: 50px;
+            margin-bottom: 25px;
+            transition: all 0.3s;
+        }
+        
+        #usernameInput:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .btn {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 18px 50px;
+            font-size: 18px;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        #chatScreen {
+            flex: 1;
+            display: none;
+            flex-direction: column;
+            padding: 0;
+        }
+        
+        #usersPanel {
+            width: 250px;
+            background: #f8f9fa;
+            border-right: 1px solid #e0e0e0;
+            padding: 25px;
+            overflow-y: auto;
+        }
+        
+        #usersPanel h3 {
+            color: #667eea;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        
+        #usersList {
+            list-style: none;
+        }
+        
+        #usersList li {
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            background: white;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        
+        .chatMain {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 30px;
+        }
+        
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            margin-bottom: 25px;
+            background: #fafafa;
+            border-radius: 15px;
+            border: 2px solid #f0f0f0;
+        }
+        
+        .message {
+            margin-bottom: 20px;
+            padding: 20px;
+            border-radius: 15px;
+            background: white;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.05);
+            animation: fadeIn 0.3s ease;
+            border-left: 5px solid #667eea;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        
+        .message-username {
+            font-weight: bold;
+            color: #333;
+            font-size: 1.1em;
+        }
+        
+        .message-time {
+            color: #888;
+            font-size: 0.9em;
+        }
+        
+        .message-text {
+            color: #444;
+            line-height: 1.5;
+            font-size: 1.05em;
+        }
+        
+        .system-message {
+            text-align: center;
+            color: #666;
+            font-style: italic;
+            margin: 15px 0;
+            padding: 12px;
+            background: #fff9e6;
+            border-radius: 10px;
+            border: 1px dashed #ffcc00;
+        }
+        
+        .input-container {
+            display: flex;
+            gap: 15px;
+            padding-top: 20px;
+            border-top: 2px solid #f0f0f0;
+        }
+        
+        #messageInput {
+            flex: 1;
+            padding: 20px 25px;
+            font-size: 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 15px;
+            transition: all 0.3s;
+        }
+        
+        #messageInput:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        #sendBtn {
+            padding: 20px 40px;
+            font-size: 16px;
+        }
+        
+        .status {
+            text-align: center;
+            padding: 15px;
+            color: #666;
+            font-size: 0.9em;
+            border-top: 1px solid #eee;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                flex-direction: column;
+                height: auto;
+            }
+            
+            #usersPanel {
+                width: 100%;
+                height: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="header">
+            <h1>✨ Простой мессенджер</h1>
+            <p>Реальный чат на WebSocket • Бесплатный хостинг • Открытый исходный код</p>
+        </div>
+        
+        <div class="container">
+            <div id="loginScreen">
+                <h2>🎯 Вход в чат</h2>
+                <input type="text" id="usernameInput" placeholder="Введите ваше имя" autocomplete="off">
+                <button class="btn" onclick="connect()">🚀 Подключиться к чату</button>
+                <div class="status" id="connectionStatus">Статус: Не подключено</div>
+            </div>
+            
+            <div id="chatScreen">
+                <div class="chatMain">
+                    <div id="messages"></div>
+                    <div class="input-container">
+                        <input type="text" id="messageInput" placeholder="Напишите сообщение..." autocomplete="off" onkeypress="handleKeyPress(event)">
+                        <button class="btn" id="sendBtn" onclick="sendMessage()">📤 Отправить</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/client.js"></script>
+</body>
+</html>
