@@ -3,66 +3,242 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Простой мессенджер</title>
+    <title>Мессенджер с приватными чатами</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
         }
         
         #app {
-            max-width: 1000px;
+            max-width: 1400px;
             margin: 0 auto;
             background: white;
             border-radius: 20px;
             box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             overflow: hidden;
+            height: 90vh;
+            display: flex;
         }
         
-        .header {
+        /* Левая панель - список пользователей */
+        #usersPanel {
+            width: 300px;
+            background: #f8f9fa;
+            border-right: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .panel-header {
+            padding: 25px;
             background: linear-gradient(90deg, #667eea, #764ba2);
             color: white;
-            padding: 30px;
+        }
+        
+        .panel-header h2 {
+            font-size: 1.5em;
+            margin-bottom: 5px;
+        }
+        
+        .panel-header p {
+            opacity: 0.9;
+            font-size: 0.9em;
+        }
+        
+        #currentUser {
+            padding: 15px;
+            background: white;
+            margin: 15px;
+            border-radius: 10px;
             text-align: center;
+            border: 2px solid #e0e0e0;
         }
         
-        .header h1 { 
-            font-size: 2.5em; 
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
-        }
-        
-        .header p { 
-            opacity: 0.9; 
+        #currentUsername {
+            font-weight: bold;
+            color: #667eea;
             font-size: 1.1em;
         }
         
-        .container {
+        #usersList {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+        }
+        
+        .user-item {
             display: flex;
-            height: 70vh;
+            align-items: center;
+            padding: 15px;
+            margin-bottom: 10px;
+            background: white;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+        
+        .user-item:hover {
+            transform: translateX(5px);
+            border-color: #667eea;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.1);
+        }
+        
+        .user-item.active {
+            background: #eef2ff;
+            border-color: #667eea;
+        }
+        
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            margin-right: 15px;
+        }
+        
+        .user-info {
+            flex: 1;
+        }
+        
+        .user-name {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .user-status {
+            font-size: 0.8em;
+            color: #666;
+            display: flex;
+            align-items: center;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        
+        .status-dot.online {
+            background: #4CAF50;
+        }
+        
+        .status-dot.offline {
+            background: #ccc;
+        }
+        
+        .start-chat-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.3s;
+        }
+        
+        .start-chat-btn:hover {
+            background: #764ba2;
+            transform: scale(1.05);
+        }
+        
+        /* Центральная часть - чаты */
+        #chatContainer {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #chatTabs {
+            display: flex;
+            background: #f5f5f5;
+            border-bottom: 1px solid #e0e0e0;
+            overflow-x: auto;
+        }
+        
+        .chat-tab {
+            padding: 15px 25px;
+            background: #f5f5f5;
+            border-right: 1px solid #e0e0e0;
+            cursor: pointer;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+        }
+        
+        .chat-tab:hover {
+            background: #eef2ff;
+        }
+        
+        .chat-tab.active {
+            background: white;
+            border-bottom: 3px solid #667eea;
+            font-weight: bold;
+        }
+        
+        .tab-close {
+            margin-left: 10px;
+            color: #999;
+            cursor: pointer;
+            padding: 2px 5px;
+            border-radius: 50%;
+        }
+        
+        .tab-close:hover {
+            background: #ff4444;
+            color: white;
+        }
+        
+        #chatContent {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
         }
         
         #loginScreen {
-            padding: 60px 40px;
-            text-align: center;
-            flex: 1;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: white;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
+            z-index: 1000;
         }
         
-        #loginScreen h2 {
+        .login-form {
+            text-align: center;
+            padding: 40px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            max-width: 400px;
+            width: 100%;
+        }
+        
+        .login-form h2 {
+            color: #667eea;
             margin-bottom: 30px;
-            color: #333;
             font-size: 2em;
         }
         
         #usernameInput {
-            width: 300px;
+            width: 100%;
             padding: 18px 25px;
             font-size: 18px;
             border: 2px solid #e0e0e0;
@@ -95,56 +271,46 @@
             box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
         }
         
-        #chatScreen {
+        /* Окно чата */
+        .chat-window {
             flex: 1;
             display: none;
             flex-direction: column;
             padding: 0;
         }
         
-        #usersPanel {
-            width: 250px;
-            background: #f8f9fa;
-            border-right: 1px solid #e0e0e0;
-            padding: 25px;
-            overflow-y: auto;
-        }
-        
-        #usersPanel h3 {
-            color: #667eea;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #e0e0e0;
-        }
-        
-        #usersList {
-            list-style: none;
-        }
-        
-        #usersList li {
-            padding: 12px 15px;
-            margin-bottom: 10px;
-            background: white;
-            border-radius: 10px;
-            border-left: 4px solid #667eea;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        }
-        
-        .chatMain {
-            flex: 1;
+        .chat-window.active {
             display: flex;
-            flex-direction: column;
-            padding: 30px;
         }
         
-        #messages {
+        #generalChat {
+            display: flex;
+        }
+        
+        .chat-header {
+            padding: 20px 25px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .chat-header h3 {
+            color: #333;
+            font-size: 1.3em;
+        }
+        
+        .chat-partner {
+            color: #667eea;
+            font-weight: bold;
+        }
+        
+        .messages-container {
             flex: 1;
             overflow-y: auto;
-            padding: 20px;
-            margin-bottom: 25px;
+            padding: 25px;
             background: #fafafa;
-            border-radius: 15px;
-            border: 2px solid #f0f0f0;
         }
         
         .message {
@@ -155,6 +321,18 @@
             box-shadow: 0 3px 10px rgba(0,0,0,0.05);
             animation: fadeIn 0.3s ease;
             border-left: 5px solid #667eea;
+            max-width: 70%;
+        }
+        
+        .message.private {
+            border-left-color: #764ba2;
+            background: #f9f3ff;
+        }
+        
+        .message.own {
+            margin-left: auto;
+            border-left-color: #4CAF50;
+            background: #f0fff4;
         }
         
         @keyframes fadeIn {
@@ -197,77 +375,190 @@
             border: 1px dashed #ffcc00;
         }
         
-        .input-container {
+        .message-input-area {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e0e0e0;
             display: flex;
             gap: 15px;
-            padding-top: 20px;
-            border-top: 2px solid #f0f0f0;
         }
         
-        #messageInput {
+        .message-input {
             flex: 1;
-            padding: 20px 25px;
+            padding: 18px 25px;
             font-size: 16px;
             border: 2px solid #e0e0e0;
             border-radius: 15px;
             transition: all 0.3s;
         }
         
-        #messageInput:focus {
+        .message-input:focus {
             outline: none;
             border-color: #667eea;
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
         
-        #sendBtn {
-            padding: 20px 40px;
+        .send-btn {
+            padding: 18px 35px;
             font-size: 16px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
         }
         
-        .status {
+        .send-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .empty-chat {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            flex: 1;
+            color: #999;
             text-align: center;
-            padding: 15px;
+            padding: 40px;
+        }
+        
+        .empty-chat h3 {
+            margin-bottom: 15px;
+            color: #667eea;
+        }
+        
+        .status-bar {
+            padding: 10px 25px;
+            background: #f5f5f5;
+            border-top: 1px solid #e0e0e0;
             color: #666;
             font-size: 0.9em;
-            border-top: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
         }
         
+        .connection-status {
+            display: flex;
+            align-items: center;
+        }
+        
+        .connection-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .connection-dot.connected {
+            background: #4CAF50;
+            animation: pulse 2s infinite;
+        }
+        
+        .connection-dot.disconnected {
+            background: #ff4444;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        /* Адаптивность */
         @media (max-width: 768px) {
-            .container {
+            #app {
                 flex-direction: column;
-                height: auto;
+                height: 100vh;
             }
             
             #usersPanel {
                 width: 100%;
                 height: 200px;
             }
+            
+            #chatContainer {
+                height: calc(100vh - 200px);
+            }
         }
     </style>
 </head>
 <body>
     <div id="app">
-        <div class="header">
-            <h1>✨ Простой мессенджер</h1>
-            <p>Реальный чат на WebSocket • Бесплатный хостинг • Открытый исходный код</p>
-        </div>
-        
-        <div class="container">
-            <div id="loginScreen">
-                <h2>🎯 Вход в чат</h2>
-                <input type="text" id="usernameInput" placeholder="Введите ваше имя" autocomplete="off">
-                <button class="btn" onclick="connect()">🚀 Подключиться к чату</button>
-                <div class="status" id="connectionStatus">Статус: Не подключено</div>
+        <!-- Левая панель пользователей -->
+        <div id="usersPanel">
+            <div class="panel-header">
+                <h2>👥 Пользователи</h2>
+                <p>Выберите собеседника</p>
             </div>
             
-            <div id="chatScreen">
-                <div class="chatMain">
-                    <div id="messages"></div>
-                    <div class="input-container">
-                        <input type="text" id="messageInput" placeholder="Напишите сообщение..." autocomplete="off" onkeypress="handleKeyPress(event)">
-                        <button class="btn" id="sendBtn" onclick="sendMessage()">📤 Отправить</button>
+            <div id="currentUser">
+                Вы: <span id="currentUsername">Не авторизован</span>
+            </div>
+            
+            <div id="usersList">
+                <!-- Список пользователей будет здесь -->
+            </div>
+        </div>
+        
+        <!-- Центральная часть с чатами -->
+        <div id="chatContainer">
+            <!-- Вкладки чатов -->
+            <div id="chatTabs">
+                <div class="chat-tab active" data-chat="general">
+                    🌐 Общий чат
+                </div>
+                <!-- Вкладки приватных чатов будут добавляться сюда -->
+            </div>
+            
+            <!-- Контент чатов -->
+            <div id="chatContent">
+                <!-- Экран входа -->
+                <div id="loginScreen">
+                    <div class="login-form">
+                        <h2>🚀 Вход в мессенджер</h2>
+                        <input type="text" id="usernameInput" placeholder="Введите ваше имя" autocomplete="off">
+                        <button class="btn" onclick="connect()">Войти в чат</button>
+                        <div class="status-bar" style="margin-top: 20px;">
+                            <div class="connection-status">
+                                <span class="connection-dot disconnected"></span>
+                                <span id="statusText">Отключено</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
+                
+                <!-- Общий чат -->
+                <div class="chat-window active" id="generalChat">
+                    <div class="chat-header">
+                        <h3>🌐 Общий чат</h3>
+                        <div>Участников: <span id="onlineCount">0</span></div>
+                    </div>
+                    
+                    <div class="messages-container" id="generalMessages">
+                        <!-- Сообщения общего чата -->
+                    </div>
+                    
+                    <div class="message-input-area">
+                        <input type="text" class="message-input" id="generalMessageInput" 
+                               placeholder="Написать в общий чат..." autocomplete="off"
+                               onkeypress="handleGeneralKeyPress(event)">
+                        <button class="send-btn" onclick="sendGeneralMessage()">Отправить</button>
+                    </div>
+                </div>
+                
+                <!-- Приватные чаты будут добавляться сюда -->
+            </div>
+            
+            <!-- Статус бар -->
+            <div class="status-bar">
+                <div class="connection-status">
+                    <span class="connection-dot disconnected" id="connectionDot"></span>
+                    <span id="statusText">Отключено</span>
+                </div>
+                <div id="userCount">Пользователей онлайн: 0</div>
             </div>
         </div>
     </div>
